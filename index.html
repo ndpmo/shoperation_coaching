@@ -67,13 +67,17 @@
           <legend>基本資料</legend>
           <div class="grid two">
             <label>樓層
-              <input id="center" name="center" required />
+              <select id="center" name="center" required>
+                <option value="">請選擇樓層</option>
+              </select>
             </label>
             <label>治療師
-              <input id="staffName" name="staffName" required />
+              <select id="staffName" name="staffName" required>
+                <option value="">請先選擇樓層</option>
+              </select>
             </label>
             <label>職級
-              <input id="positionLevel" name="positionLevel" />
+              <input id="positionLevel" name="positionLevel" readonly />
             </label>
             <label>入職日期
               <input id="joinDate" name="joinDate" type="date" />
@@ -206,7 +210,7 @@ const fields = [
 const headerAliases = {
   center: ['樓層', '中心', 'Floor', 'Center', 'centre', 'Centre'],
   staffName: ['治療師', '同事名', '姓名', '員工姓名', 'Therapist', 'Staff name', 'Name'],
-  positionLevel: ['職級', '級別', 'Position', 'Level'],
+  positionLevel: ['職級', '級別', 'Position', 'position', 'Level', 'Job Title', 'Title'],
   joinDate: ['入職日期', 'Join date'],
   coachingDate: ['輔導日期', '日期', 'Coaching date'],
   coachingTime: ['輔導時間', 'Coaching time', 'Coaching Time', 'Time'],
@@ -336,6 +340,7 @@ async function loadSheetRecords() {
     sourceStatus.textContent = '未能讀取資料表。請確認資料表已發布成公開 CSV，或使用已授權的資料接口。';
   }
   refreshData();
+  populateFormDropdowns();
 }
 
 function refreshData() {
@@ -470,6 +475,75 @@ function formatDateTime(value) {
   });
 }
 
+function getTherapistSourceRecords() {
+  return sheetRecords.filter(record =>
+    !isExcludedCenter(record.center) &&
+    String(record.center || '').trim() &&
+    String(record.staffName || '').trim()
+  );
+}
+
+function populateFormDropdowns(selectedFloor = '', selectedTherapist = '') {
+  const floorSelect = document.getElementById('center');
+  const therapistSelect = document.getElementById('staffName');
+  if (!floorSelect || !therapistSelect) return;
+
+  const floors = [...new Set(getTherapistSourceRecords().map(record => record.center).filter(Boolean))].sort();
+  const currentFloor = selectedFloor || floorSelect.value;
+
+  floorSelect.innerHTML = '<option value="">請選擇樓層</option>' +
+    floors.map(floor => `<option value="${escapeHtml(floor)}">${escapeHtml(floor)}</option>`).join('');
+
+  if (currentFloor && floors.includes(currentFloor)) {
+    floorSelect.value = currentFloor;
+  }
+
+  updateTherapistOptions(selectedTherapist || therapistSelect.value);
+}
+
+function updateTherapistOptions(selectedTherapist = '') {
+  const floorSelect = document.getElementById('center');
+  const therapistSelect = document.getElementById('staffName');
+  const positionInput = document.getElementById('positionLevel');
+  if (!floorSelect || !therapistSelect || !positionInput) return;
+
+  const selectedFloor = floorSelect.value;
+  const source = getTherapistSourceRecords().filter(record => !selectedFloor || record.center === selectedFloor);
+  const therapists = [...new Set(source.map(record => record.staffName).filter(Boolean))].sort();
+
+  therapistSelect.innerHTML = selectedFloor
+    ? '<option value="">請選擇治療師</option>'
+    : '<option value="">請先選擇樓層</option>';
+
+  therapistSelect.innerHTML += therapists
+    .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
+    .join('');
+
+  if (selectedTherapist && therapists.includes(selectedTherapist)) {
+    therapistSelect.value = selectedTherapist;
+  }
+
+  autofillPosition();
+}
+
+function autofillPosition() {
+  const floor = document.getElementById('center')?.value || '';
+  const therapist = document.getElementById('staffName')?.value || '';
+  const positionInput = document.getElementById('positionLevel');
+  if (!positionInput) return;
+
+  const match = getTherapistSourceRecords().find(record =>
+    record.center === floor &&
+    record.staffName === therapist &&
+    String(record.positionLevel || '').trim()
+  ) || getTherapistSourceRecords().find(record =>
+    record.staffName === therapist &&
+    String(record.positionLevel || '').trim()
+  );
+
+  positionInput.value = match ? match.positionLevel : '';
+}
+
 function readForm() {
   const data = {};
   fields.forEach(field => data[field] = (document.getElementById(field)?.value || '').trim());
@@ -479,10 +553,12 @@ function readForm() {
 }
 
 function fillForm(record) {
+  populateFormDropdowns(record.center || '', record.staffName || '');
   fields.forEach(field => {
     const element = document.getElementById(field);
     if (element) element.value = record[field] || '';
   });
+  autofillPosition();
   recordIdInput.value = record.id;
   formTitle.textContent = '編輯輔導紀錄';
   cancelEditBtn.classList.remove('hidden');
@@ -494,6 +570,7 @@ function clearForm() {
   recordIdInput.value = '';
   formTitle.textContent = '新增輔導紀錄';
   cancelEditBtn.classList.add('hidden');
+  populateFormDropdowns();
   hideFormPanel();
 }
 
@@ -566,6 +643,8 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => exportF
 searchInput.addEventListener('input', renderDashboard);
 centerFilter.addEventListener('change', renderDashboard);
 sheetUrlInput.addEventListener('change', loadSheetRecords);
+document.getElementById('center').addEventListener('change', () => updateTherapistOptions(''));
+document.getElementById('staffName').addEventListener('change', autofillPosition);
 
 loadSheetRecords();
 
