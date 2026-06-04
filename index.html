@@ -291,6 +291,11 @@ function findColumn(headers, aliases, fallbackIndex) {
   return fallbackIndex;
 }
 
+function isExcludedCenter(value) {
+  const center = String(value || '').trim().toLowerCase();
+  return center === 'grand total' || center === 'total';
+}
+
 function rowsToRecords(rows) {
   if (!rows.length) return [];
   const headers = rows[0];
@@ -307,7 +312,10 @@ function rowsToRecords(rows) {
     });
     if (!record.center) record.center = String(row[0] || '未分類').trim() || '未分類';
     return record;
-  }).filter(record => Object.values(record).some(value => String(value || '').trim() !== ''));
+  }).filter(record =>
+    Object.values(record).some(value => String(value || '').trim() !== '') &&
+    !isExcludedCenter(record.center)
+  );
 }
 
 async function loadSheetRecords() {
@@ -331,7 +339,7 @@ async function loadSheetRecords() {
 }
 
 function refreshData() {
-  allRecords = [...sheetRecords, ...getLocalRecords().map(record => ({ ...record, source: '本機' }))];
+  allRecords = [...sheetRecords, ...getLocalRecords().map(record => ({ ...record, source: '本機' }))].filter(record => !isExcludedCenter(record.center));
   updateCenterFilter();
   renderDashboard();
 }
