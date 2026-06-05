@@ -107,10 +107,10 @@
               <input id="activeClients" name="activeClients" type="number" min="0" />
             </label>
             <label>過往6個月平均消費
-              <input id="averageSpending" name="averageSpending" type="number" min="0" step="0.01" readonly />
+              <input id="averageSpending" name="averageSpending" type="number" min="0" step="0.01" readonly / readonly>
             </label>
             <label>過往12個月平均消費
-              <input id="averageSpending12" name="averageSpending12" type="number" min="0" step="0.01" readonly />
+              <input id="averageSpending12" name="averageSpending12" type="number" min="0" step="0.01" readonly / readonly>
             </label>
             <label>每月銷售目標（公司定）
               <input id="companySalesTarget" name="companySalesTarget" type="number" min="0" step="0.01" / readonly>
@@ -570,11 +570,12 @@ function formatDateForInput(value) {
 function autofillTherapistDetails() {
   const floor = document.getElementById('center')?.value || '';
   const therapist = document.getElementById('staffName')?.value || '';
-  const positionInput = document.getElementById('positionLevel');
-  const targetInput = document.getElementById('companySalesTarget');
+
+  const companyTargetInput = document.getElementById('companySalesTarget');
   const joinDateInput = document.getElementById('joinDate');
   const avg6Input = document.getElementById('averageSpending');
   const avg12Input = document.getElementById('averageSpending12');
+  const positionInput = document.getElementById('positionLevel');
 
   const match = getTherapistSourceRecords().find(record =>
     record.center === floor &&
@@ -584,7 +585,7 @@ function autofillTherapistDetails() {
   );
 
   if (positionInput) positionInput.value = match?.positionLevel || '';
-  if (targetInput) targetInput.value = match?.companySalesTarget || '';
+  if (companyTargetInput) companyTargetInput.value = match?.companySalesTarget || '';
   if (joinDateInput) joinDateInput.value = formatDateForInput(match?.joinDate || '');
   if (avg6Input) avg6Input.value = match?.averageSpending || '';
   if (avg12Input) avg12Input.value = match?.averageSpending12 || '';
