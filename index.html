@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>輔導紀錄分類系統</title>
   <link rel="stylesheet" href="styles.css" />
+<style>
+
+.empty-session {
+  background: #fafcff;
+}
+.empty-session strong {
+  color: var(--muted);
+}
+
+</style>
 </head>
 <body>
   <header class="app-header">
@@ -425,56 +435,99 @@ function renderSummary(grouped) {
 }
 
 function renderGroups(grouped) {
-  const entries = Object.entries(grouped).sort((a, b) => a[0].localeCompare(b[0]));
-  if (!entries.length) {
-    groupedRecords.innerHTML = '<p class="hint">暫時沒有紀錄。</p>';
+  const selectedCenter = centerFilter.value;
+  const query = searchInput.value.toLowerCase().trim();
+
+  const allTherapistsByFloor = getTherapistSourceRecords().reduce((acc, record) => {
+    const floor = record.center || '未分類樓層';
+    const therapist = record.staffName || '未填治療師';
+    if (!acc[floor]) acc[floor] = {};
+    if (!acc[floor][therapist]) acc[floor][therapist] = record;
+    return acc;
+  }, {});
+
+  const floors = Object.keys(allTherapistsByFloor)
+    .filter(floor => !selectedCenter || floor === selectedCenter)
+    .sort((a, b) => a.localeCompare(b));
+
+  if (!floors.length) {
+    groupedRecords.innerHTML = '<p class="hint">暫時沒有治療師資料。</p>';
     return;
   }
 
-  groupedRecords.innerHTML = entries.map(([floor, records]) => {
-    const therapistGroups = records.reduce((acc, record) => {
-      const therapist = record.staffName || '未填治療師';
-      if (!acc[therapist]) acc[therapist] = [];
-      acc[therapist].push(record);
-      return acc;
-    }, {});
+  groupedRecords.innerHTML = floors.map(floor => {
+    const therapists = Object.keys(allTherapistsByFloor[floor]).sort((a, b) => a.localeCompare(b));
+    const therapistCards = therapists.map(therapist => {
+      const therapistInfo = allTherapistsByFloor[floor][therapist];
+      const therapistRecords = (grouped[floor] || []).filter(record =>
+        (record.staffName || '未填治療師') === therapist &&
+        record.source !== '資料表'
+      );
+
+      const displayRecords = therapistRecords.filter(record => {
+        if (!query) return true;
+        return Object.values(record).join(' ').toLowerCase().includes(query) ||
+          Object.values(therapistInfo).join(' ').toLowerCase().includes(query);
+      });
+
+      const showTherapist = !query || displayRecords.length > 0 ||
+        Object.values(therapistInfo).join(' ').toLowerCase().includes(query);
+
+      if (!showTherapist) return '';
+
+      return `
+        <article class="therapist-card">
+          <div class="therapist-header">
+            <h4>治療師：${escapeHtml(therapist)}</h4>
+            <span class="badge">${therapistRecords.length || 0} 次輔導</span>
+          </div>
+
+          <div class="session-list">
+            ${displayRecords.length ? displayRecords.map(record => {
+              const time = record.coachingTime || record.coachingDate || record.nextMeeting || '未填輔導時間';
+              return `
+                <div class="session-row">
+                  <div>
+                    <strong>輔導時間：${escapeHtml(formatDateTime(time))}</strong>
+                    <p>${escapeHtml(record.keyContent || record.changePlan || record.expectedGoal || '未填輔導內容')}</p>
+                  </div>
+                  <div class="record-actions">
+                    ${record.source === '本機' ? `
+                      <button class="secondary" onclick="editRecord('${record.id}')">編輯</button>
+                      <button class="danger" onclick="deleteRecord('${record.id}')">刪除</button>
+                    ` : '<span class="hint">資料表</span>'}
+                  </div>
+                </div>
+              `;
+            }).join('') : `
+              <div class="session-row empty-session">
+                <div>
+                  <strong>0 次輔導</strong>
+                  <p>暫時未有輔導紀錄</p>
+                </div>
+              </div>
+            `}
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    const coachingCount = therapists.reduce((sum, therapist) => {
+      return sum + ((grouped[floor] || []).filter(record =>
+        (record.staffName || '未填治療師') === therapist &&
+        record.source !== '資料表'
+      ).length);
+    }, 0);
 
     return `
       <section class="center-group">
         <div class="center-group-header">
           <h3>樓層：${escapeHtml(floor)}</h3>
-          <span class="badge">${records.length} 筆</span>
+          <span class="badge">${coachingCount} 筆</span>
         </div>
 
         <div class="therapist-list">
-          ${Object.entries(therapistGroups).sort((a, b) => a[0].localeCompare(b[0])).map(([therapist, therapistRecords]) => `
-            <article class="therapist-card">
-              <div class="therapist-header">
-                <h4>治療師：${escapeHtml(therapist)}</h4>
-                <span class="badge">${therapistRecords.length} 次輔導</span>
-              </div>
-
-              <div class="session-list">
-                ${therapistRecords.map(record => {
-                  const time = record.coachingTime || record.coachingDate || record.nextMeeting || '未填輔導時間';
-                  return `
-                    <div class="session-row">
-                      <div>
-                        <strong>輔導時間：${escapeHtml(formatDateTime(time))}</strong>
-                        <p>${escapeHtml(record.keyContent || record.changePlan || record.expectedGoal || '未填輔導內容')}</p>
-                      </div>
-                      <div class="record-actions">
-                        ${record.source === '本機' ? `
-                          <button class="secondary" onclick="editRecord('${record.id}')">編輯</button>
-                          <button class="danger" onclick="deleteRecord('${record.id}')">刪除</button>
-                        ` : '<span class="hint">資料表</span>'}
-                      </div>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            </article>
-          `).join('')}
+          ${therapistCards || '<p class="hint">沒有符合搜尋的治療師。</p>'}
         </div>
       </section>
     `;
