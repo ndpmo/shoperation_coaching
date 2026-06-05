@@ -67,17 +67,13 @@
           <legend>基本資料</legend>
           <div class="grid two">
             <label>樓層
-              <select id="center" name="center" required>
-                <option value="">請選擇樓層</option>
-              </select>
+              <input id="center" name="center" required />
             </label>
             <label>治療師
-              <select id="staffName" name="staffName" required>
-                <option value="">請先選擇樓層</option>
-              </select>
+              <input id="staffName" name="staffName" required />
             </label>
             <label>職級
-              <input id="positionLevel" name="positionLevel" readonly />
+              <input id="positionLevel" name="positionLevel" />
             </label>
             <label>入職日期
               <input id="joinDate" name="joinDate" type="date" />
@@ -106,8 +102,11 @@
             <label>活躍客戶
               <input id="activeClients" name="activeClients" type="number" min="0" />
             </label>
-            <label>平均消費
-              <input id="averageSpending" name="averageSpending" type="number" min="0" step="0.01" />
+            <label>過往6個月平均消費
+              <input id="averageSpending" name="averageSpending" type="number" min="0" step="0.01" readonly />
+            </label>
+            <label>過往12個月平均消費
+              <input id="averageSpending12" name="averageSpending12" type="number" min="0" step="0.01" readonly />
             </label>
             <label>每月銷售目標（公司定）
               <input id="companySalesTarget" name="companySalesTarget" type="number" min="0" step="0.01" />
@@ -162,10 +161,7 @@
             <label>同事 Anchor？
               <input id="staffAnchor" name="staffAnchor" />
             </label>
-            <label>我的聲譽分
-              <input id="myRating" name="myRating" type="number" min="0" max="10" step="0.1" />
-            </label>
-            <label>我的文化旅遊評分
+            <label>我的評分
               <input id="cultureJourneyRating" name="cultureJourneyRating" type="number" min="0" max="10" step="0.1" />
             </label>
           </div>
@@ -202,9 +198,9 @@ let allRecords = [];
 
 const fields = [
   'center','staffName','positionLevel','joinDate','coachingDate','coachingTime','directManager','directReport','brand',
-  'activeClients','averageSpending','csatAverage','companySalesTarget','selfSalesTarget',
+  'activeClients','averageSpending','averageSpending12','csatAverage','companySalesTarget','selfSalesTarget',
   'keyContent','changePlan','expectedGoal','method1','method2','method3',
-  'nextMeeting','staffAnchor','myRating','cultureJourneyRating'
+  'nextMeeting','staffAnchor','cultureJourneyRating'
 ];
 
 const headerAliases = {
@@ -218,7 +214,8 @@ const headerAliases = {
   directReport: ['直線下屬', '下屬', 'Direct report'],
   brand: ['品牌', 'Brand'],
   activeClients: ['活躍客戶', 'Active clients'],
-  averageSpending: ['平均消費', 'Average spending'],
+  averageSpending: ['過往6個月過往6個月平均消費', '過往6個月平均消費', 'Average spending 6 months', '6 month average spending'],
+  averageSpending12: ['過往12個月過往6個月平均消費', 'Average spending 12 months', '12 month average spending'],
   csatAverage: ['顧客滿意度平均', 'CSAT', 'csat'],
   companySalesTarget: ['每月銷售目標（公司定）', '公司定銷售目標'],
   selfSalesTarget: ['每月銷售目標（自己定）', '自己定銷售目標'],
@@ -230,8 +227,7 @@ const headerAliases = {
   method3: ['方法三', '3'],
   nextMeeting: ['下次見面時間預約', '下次見面時間'],
   staffAnchor: ['同事 Anchor？', '同事Anchor', 'Anchor'],
-  myRating: ['我的聲譽分', '聲譽分'],
-  cultureJourneyRating: ['我的文化旅遊評分', '文化旅遊評分']
+  cultureJourneyRating: ['我的評分', '我的評分', '文化旅遊評分']
 };
 
 function getLocalRecords() {
@@ -305,7 +301,7 @@ function rowsToRecords(rows) {
   const headers = rows[0];
   const columnMap = {};
   Object.entries(headerAliases).forEach(([field, aliases]) => {
-    columnMap[field] = findColumn(headers, aliases, field === 'center' ? 0 : -1);
+    columnMap[field] = findColumn(headers, aliases, field === 'center' ? 0 : field === 'staffName' ? 1 : field === 'averageSpending' ? 4 : field === 'averageSpending12' ? 5 : -1);
   });
 
   return rows.slice(1).map((row, index) => {
@@ -340,7 +336,6 @@ async function loadSheetRecords() {
     sourceStatus.textContent = '未能讀取資料表。請確認資料表已發布成公開 CSV，或使用已授權的資料接口。';
   }
   refreshData();
-  populateFormDropdowns();
 }
 
 function refreshData() {
@@ -475,75 +470,6 @@ function formatDateTime(value) {
   });
 }
 
-function getTherapistSourceRecords() {
-  return sheetRecords.filter(record =>
-    !isExcludedCenter(record.center) &&
-    String(record.center || '').trim() &&
-    String(record.staffName || '').trim()
-  );
-}
-
-function populateFormDropdowns(selectedFloor = '', selectedTherapist = '') {
-  const floorSelect = document.getElementById('center');
-  const therapistSelect = document.getElementById('staffName');
-  if (!floorSelect || !therapistSelect) return;
-
-  const floors = [...new Set(getTherapistSourceRecords().map(record => record.center).filter(Boolean))].sort();
-  const currentFloor = selectedFloor || floorSelect.value;
-
-  floorSelect.innerHTML = '<option value="">請選擇樓層</option>' +
-    floors.map(floor => `<option value="${escapeHtml(floor)}">${escapeHtml(floor)}</option>`).join('');
-
-  if (currentFloor && floors.includes(currentFloor)) {
-    floorSelect.value = currentFloor;
-  }
-
-  updateTherapistOptions(selectedTherapist || therapistSelect.value);
-}
-
-function updateTherapistOptions(selectedTherapist = '') {
-  const floorSelect = document.getElementById('center');
-  const therapistSelect = document.getElementById('staffName');
-  const positionInput = document.getElementById('positionLevel');
-  if (!floorSelect || !therapistSelect || !positionInput) return;
-
-  const selectedFloor = floorSelect.value;
-  const source = getTherapistSourceRecords().filter(record => !selectedFloor || record.center === selectedFloor);
-  const therapists = [...new Set(source.map(record => record.staffName).filter(Boolean))].sort();
-
-  therapistSelect.innerHTML = selectedFloor
-    ? '<option value="">請選擇治療師</option>'
-    : '<option value="">請先選擇樓層</option>';
-
-  therapistSelect.innerHTML += therapists
-    .map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-    .join('');
-
-  if (selectedTherapist && therapists.includes(selectedTherapist)) {
-    therapistSelect.value = selectedTherapist;
-  }
-
-  autofillPosition();
-}
-
-function autofillPosition() {
-  const floor = document.getElementById('center')?.value || '';
-  const therapist = document.getElementById('staffName')?.value || '';
-  const positionInput = document.getElementById('positionLevel');
-  if (!positionInput) return;
-
-  const match = getTherapistSourceRecords().find(record =>
-    record.center === floor &&
-    record.staffName === therapist &&
-    String(record.positionLevel || '').trim()
-  ) || getTherapistSourceRecords().find(record =>
-    record.staffName === therapist &&
-    String(record.positionLevel || '').trim()
-  );
-
-  positionInput.value = match ? match.positionLevel : '';
-}
-
 function readForm() {
   const data = {};
   fields.forEach(field => data[field] = (document.getElementById(field)?.value || '').trim());
@@ -553,12 +479,10 @@ function readForm() {
 }
 
 function fillForm(record) {
-  populateFormDropdowns(record.center || '', record.staffName || '');
   fields.forEach(field => {
     const element = document.getElementById(field);
     if (element) element.value = record[field] || '';
   });
-  autofillPosition();
   recordIdInput.value = record.id;
   formTitle.textContent = '編輯輔導紀錄';
   cancelEditBtn.classList.remove('hidden');
@@ -570,7 +494,6 @@ function clearForm() {
   recordIdInput.value = '';
   formTitle.textContent = '新增輔導紀錄';
   cancelEditBtn.classList.add('hidden');
-  populateFormDropdowns();
   hideFormPanel();
 }
 
@@ -595,7 +518,7 @@ function exportFile(type) {
     content = JSON.stringify(records, null, 2);
     mime = 'application/json;charset=utf-8;';
   } else {
-    const headers = ['樓層','治療師','職級','入職日期','輔導日期','輔導時間','直屬上司','直線下屬','品牌','活躍客戶','平均消費','顧客滿意度平均','每月銷售目標（公司定）','每月銷售目標（自己定）','重點內容','轉變計劃','期望目標','方法一','方法二','方法三','下次見面時間','同事 Anchor','我的聲譽分','我的文化旅遊評分','來源'];
+    const headers = ['樓層','治療師','職級','入職日期','輔導日期','輔導時間','直屬上司','直線下屬','品牌','活躍客戶','過往6個月過往6個月平均消費','過往12個月過往6個月平均消費','顧客滿意度平均','每月銷售目標（公司定）','每月銷售目標（自己定）','重點內容','轉變計劃','期望目標','方法一','方法二','方法三','下次見面時間','同事 Anchor','我的評分','來源'];
     const keys = [...fields, 'source'];
     content = [headers, ...records.map(record => keys.map(key => record[key] || ''))]
       .map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(','))
@@ -643,8 +566,6 @@ document.getElementById('exportJsonBtn').addEventListener('click', () => exportF
 searchInput.addEventListener('input', renderDashboard);
 centerFilter.addEventListener('change', renderDashboard);
 sheetUrlInput.addEventListener('change', loadSheetRecords);
-document.getElementById('center').addEventListener('change', () => updateTherapistOptions(''));
-document.getElementById('staffName').addEventListener('change', autofillPosition);
 
 loadSheetRecords();
 
