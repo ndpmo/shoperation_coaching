@@ -35,7 +35,7 @@
         <label>Apps Script API 網址
           <input id="sheetUrlInput" placeholder="請貼上 Apps Script Web App URL" />
         </label>
-        <p class="hint">網站會透過 Apps Script 讀取 Google Sheet。請將 Apps Script 部署為 Web App，然後貼上 Web App URL。</p>
+        <p class="hint">網站會透過 Apps Script 讀取 Google Sheet：A=Center、B=Therapist、D=Position、E=公司銷售目標、F=入職日期、G=6個月平均消費、H=12個月平均消費。</p>
       </div>
 
       <div id="centerSummary" class="summary-grid"></div>
@@ -80,7 +80,7 @@
               <input id="positionLevel" name="positionLevel" readonly />
             </label>
             <label>入職日期
-              <input id="joinDate" name="joinDate" type="date" />
+              <input id="joinDate" name="joinDate" type="date" / readonly>
             </label>
             <label>輔導日期
               <input id="coachingDate" name="coachingDate" type="date" />
@@ -113,7 +113,7 @@
               <input id="averageSpending12" name="averageSpending12" type="number" min="0" step="0.01" readonly />
             </label>
             <label>每月銷售目標（公司定）
-              <input id="companySalesTarget" name="companySalesTarget" type="number" min="0" step="0.01" />
+              <input id="companySalesTarget" name="companySalesTarget" type="number" min="0" step="0.01" / readonly>
             </label>
             <label>每月銷售目標（自己定）
               <input id="selfSalesTarget" name="selfSalesTarget" type="number" min="0" step="0.01" />
@@ -300,8 +300,10 @@ function normalizeApiRecord(row, index) {
   record.center = String(row.center ?? row.floor ?? row['樓層'] ?? row['中心'] ?? '').trim();
   record.staffName = String(row.staffName ?? row.therapist ?? row['治療師'] ?? row['同事名'] ?? '').trim();
   record.positionLevel = String(row.positionLevel ?? row.position ?? row['職級'] ?? row['Position'] ?? '').trim();
-  record.averageSpending = String(row.averageSpending ?? row.avg6 ?? row['過往6個月平均消費'] ?? row['平均消費6個月'] ?? '').trim();
-  record.averageSpending12 = String(row.averageSpending12 ?? row.avg12 ?? row['過往12個月平均消費'] ?? row['平均消費12個月'] ?? '').trim();
+  record.companySalesTarget = String(row.companySalesTarget ?? row.salesTargetCompany ?? row['每月銷售目標（公司定）'] ?? '').trim();
+  record.joinDate = String(row.joinDate ?? row['入職日期'] ?? '').trim();
+  record.averageSpending = String(row.averageSpending ?? row.avg6 ?? row['過往6個月平均消費'] ?? '').trim();
+  record.averageSpending12 = String(row.averageSpending12 ?? row.avg12 ?? row['過往12個月平均消費'] ?? '').trim();
 
   Object.keys(row || {}).forEach(key => {
     if (fields.includes(key) && !record[key]) record[key] = String(row[key] ?? '').trim();
@@ -316,7 +318,7 @@ function rowsToRecords(rows) {
   const headers = rows[0];
   const columnMap = {};
   Object.entries(headerAliases).forEach(([field, aliases]) => {
-    columnMap[field] = findColumn(headers, aliases, field === 'center' ? 0 : field === 'staffName' ? 1 : field === 'averageSpending' ? 4 : field === 'averageSpending12' ? 5 : -1);
+    columnMap[field] = findColumn(headers, aliases, field === 'center' ? 0 : field === 'staffName' ? 1 : field === 'positionLevel' ? 3 : field === 'companySalesTarget' ? 4 : field === 'joinDate' ? 5 : field === 'averageSpending' ? 6 : field === 'averageSpending12' ? 7 : -1);
   });
 
   return rows.slice(1).map((row, index) => {
@@ -551,10 +553,26 @@ function updateTherapistOptions(selectedTherapist = '') {
   autofillTherapistDetails();
 }
 
+function formatDateForInput(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const date = new Date(raw);
+  if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+  const parts = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (parts) {
+    const [, d, m, y] = parts;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return '';
+}
+
 function autofillTherapistDetails() {
   const floor = document.getElementById('center')?.value || '';
   const therapist = document.getElementById('staffName')?.value || '';
   const positionInput = document.getElementById('positionLevel');
+  const targetInput = document.getElementById('companySalesTarget');
+  const joinDateInput = document.getElementById('joinDate');
   const avg6Input = document.getElementById('averageSpending');
   const avg12Input = document.getElementById('averageSpending12');
 
@@ -566,6 +584,8 @@ function autofillTherapistDetails() {
   );
 
   if (positionInput) positionInput.value = match?.positionLevel || '';
+  if (targetInput) targetInput.value = match?.companySalesTarget || '';
+  if (joinDateInput) joinDateInput.value = formatDateForInput(match?.joinDate || '');
   if (avg6Input) avg6Input.value = match?.averageSpending || '';
   if (avg12Input) avg12Input.value = match?.averageSpending12 || '';
 }
@@ -626,7 +646,7 @@ function exportFile(type) {
     content = JSON.stringify(records, null, 2);
     mime = 'application/json;charset=utf-8;';
   } else {
-    const headers = ['樓層','治療師','職級','入職日期','輔導日期','輔導時間','直屬上司','直線下屬','品牌','活躍客戶','過往6個月過往6個月平均消費','過往12個月過往6個月平均消費','顧客滿意度平均','每月銷售目標（公司定）','每月銷售目標（自己定）','重點內容','轉變計劃','期望目標','方法一','方法二','方法三','下次見面時間','同事 Anchor','我的評分','來源'];
+    const headers = ['樓層','治療師','職級','入職日期','輔導日期','輔導時間','直屬上司','直線下屬','品牌','活躍客戶','過往6個月平均消費','過往12個月平均消費','顧客滿意度平均','每月銷售目標（公司定）','每月銷售目標（自己定）','重點內容','轉變計劃','期望目標','方法一','方法二','方法三','下次見面時間','同事 Anchor','我的評分','來源'];
     const keys = [...fields, 'source'];
     content = [headers, ...records.map(record => keys.map(key => record[key] || ''))]
       .map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(','))
