@@ -32,10 +32,10 @@
       </div>
 
       <div class="source-box">
-        <label>資料表網址
-          <input id="sheetUrlInput" value="https://docs.google.com/spreadsheets/d/1qtmuwLlmNoJPJy5zBiQN-5kf0n_9ztA-_XwTbzdKzRk/edit?gid=0#gid=0" />
+        <label>Apps Script API 網址
+          <input id="sheetUrlInput" placeholder="請貼上 Apps Script Web App URL" />
         </label>
-        <p class="hint">A 欄作為「樓層」分類。資料表需公開或發布成 CSV，網站才可直接讀取。</p>
+        <p class="hint">網站會透過 Apps Script 讀取 Google Sheet。請將 Apps Script 部署為 Web App，然後貼上 Web App URL。</p>
       </div>
 
       <div id="centerSummary" class="summary-grid"></div>
@@ -181,8 +181,6 @@
 
   <script>
 const STORAGE_KEY = 'coachingFormRecords.v3';
-const DEFAULT_SHEET_ID = '1qtmuwLlmNoJPJy5zBiQN-5kf0n_9ztA-_XwTbzdKzRk';
-const DEFAULT_GID = '0';
 
 const form = document.getElementById('coachingForm');
 const recordIdInput = document.getElementById('recordId');
@@ -242,13 +240,8 @@ function saveLocalRecords(records) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
 }
 
-function getCsvUrl() {
-  const input = sheetUrlInput.value.trim();
-  const idMatch = input.match(/\/spreadsheets\/d\/([^/]+)/);
-  const gidMatch = input.match(/[?&#]gid=(\d+)/);
-  const id = idMatch ? idMatch[1] : DEFAULT_SHEET_ID;
-  const gid = gidMatch ? gidMatch[1] : DEFAULT_GID;
-  return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+function getApiUrl() {
+  return sheetUrlInput.value.trim();
 }
 
 function parseCsv(text) {
@@ -300,6 +293,24 @@ function isExcludedCenter(value) {
   return center === 'grand total' || center === 'total';
 }
 
+function normalizeApiRecord(row, index) {
+  const record = { id: `sheet-${index}`, source: '資料表' };
+  fields.forEach(field => record[field] = '');
+
+  record.center = String(row.center ?? row.floor ?? row['樓層'] ?? row['中心'] ?? '').trim();
+  record.staffName = String(row.staffName ?? row.therapist ?? row['治療師'] ?? row['同事名'] ?? '').trim();
+  record.positionLevel = String(row.positionLevel ?? row.position ?? row['職級'] ?? row['Position'] ?? '').trim();
+  record.averageSpending = String(row.averageSpending ?? row.avg6 ?? row['過往6個月平均消費'] ?? row['平均消費6個月'] ?? '').trim();
+  record.averageSpending12 = String(row.averageSpending12 ?? row.avg12 ?? row['過往12個月平均消費'] ?? row['平均消費12個月'] ?? '').trim();
+
+  Object.keys(row || {}).forEach(key => {
+    if (fields.includes(key) && !record[key]) record[key] = String(row[key] ?? '').trim();
+  });
+
+  if (!record.center) record.center = '未分類樓層';
+  return record;
+}
+
 function rowsToRecords(rows) {
   if (!rows.length) return [];
   const headers = rows[0];
@@ -323,22 +334,36 @@ function rowsToRecords(rows) {
 }
 
 async function loadSheetRecords() {
-  sourceStatus.textContent = '正在載入資料表...';
+  const apiUrl = getApiUrl();
+  if (!apiUrl) {
+    sheetRecords = [];
+    sourceStatus.textContent = '請先填入 Apps Script Web App URL。';
+    refreshData();
+    populateFormDropdowns();
+    return;
+  }
+
+  sourceStatus.textContent = '正在透過 Apps Script 載入資料...';
   try {
-    const response = await fetch(getCsvUrl(), { cache: 'no-store' });
+    const response = await fetch(apiUrl, { cache: 'no-store' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const text = await response.text();
 
-    if (text.includes('<!DOCTYPE html') || text.includes('<html')) {
-      throw new Error('資料表不是公開 CSV');
-    }
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload : (payload.records || payload.data || []);
 
-    sheetRecords = rowsToRecords(parseCsv(text));
+    sheetRecords = rows
+      .map((row, index) => normalizeApiRecord(row, index))
+      .filter(record =>
+        Object.values(record).some(value => String(value || '').trim() !== '') &&
+        !isExcludedCenter(record.center)
+      );
+
     sourceStatus.textContent = `已載入資料表紀錄：${sheetRecords.length} 筆`;
   } catch (error) {
     sheetRecords = [];
-    sourceStatus.textContent = '未能讀取資料表。請確認資料表已發布成公開 CSV，或使用已授權的資料接口。';
+    sourceStatus.textContent = '未能讀取 Apps Script 資料。請確認 Web App 已部署為「Anyone」可存取，並回傳 JSON。';
   }
+
   refreshData();
   populateFormDropdowns();
 }
