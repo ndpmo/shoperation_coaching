@@ -84,6 +84,22 @@ button:disabled {
 }
 </style>
 
+
+<style>
+.position-label {
+  display: inline-flex;
+  align-items: center;
+  margin-left: .5rem;
+  margin-right: .35rem;
+  padding: .22rem .55rem;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+  font-size: .8rem;
+  font-weight: 900;
+}
+</style>
+
 </head>
 <body>
   <header class="app-header">
@@ -646,6 +662,7 @@ function renderGroups(grouped) {
           <div class="therapist-header">
             <div>
               <h4>治療師：${escapeHtml(therapist)}
+                <span class="position-label">${escapeHtml(therapistInfo.positionLevel || '-')}</span>
                 <span class="mtd-label ${mtdStatus}">
                   ${escapeHtml(getMtdStatusLabel(mtdPercent))} · MTD ${escapeHtml(mtdPercent || '-')} · Sales ${escapeHtml(mtdSales || '-')}
                 </span>
