@@ -15,6 +15,75 @@
 }
 
 </style>
+
+<style>
+.toolbar {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+.mtd-label {
+  display: inline-flex;
+  align-items: center;
+  margin-left: .5rem;
+  padding: .22rem .55rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 900;
+}
+.mtd-label.green { background: #e8f8ef; color: #137333; }
+.mtd-label.yellow { background: #fff8dc; color: #8a6500; }
+.mtd-label.red { background: #fff0f0; color: #b42318; }
+.therapist-card.green-light { border-left: 6px solid #34a853; }
+.therapist-card.yellow-light { border-left: 6px solid #fbbc04; }
+.therapist-card.red-light { border-left: 6px solid #ea4335; }
+.therapist-actions {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.chance-wrap {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin-top: .45rem;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 800;
+}
+.chance-marks {
+  display: inline-flex;
+  gap: .25rem;
+}
+.chance-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .72rem;
+  font-weight: 900;
+  background: #fff;
+}
+.chance-mark.used {
+  background: #e8eefc;
+  color: var(--primary-dark);
+}
+.chance-mark.remaining {
+  background: #f6fff8;
+  color: #137333;
+}
+@media (max-width: 900px) {
+  .toolbar { grid-template-columns: 1fr; }
+}
+</style>
+
 </head>
 <body>
   <header class="app-header">
@@ -54,6 +123,19 @@
         <label>按樓層篩選
           <select id="centerFilter">
             <option value="">全部樓層</option>
+          </select>
+        </label>
+        <label>按治療師篩選
+          <select id="therapistFilter">
+            <option value="">全部治療師</option>
+          </select>
+        </label>
+        <label>按 MTD % 篩選
+          <select id="mtdFilter">
+            <option value="">全部 MTD %</option>
+            <option value="green">綠燈 ≥ 100%</option>
+            <option value="yellow">黃燈 90% - 99.99%</option>
+            <option value="red">紅燈 < 90%</option>
           </select>
         </label>
         <label>搜尋
@@ -114,7 +196,13 @@
           <legend>表現概況</legend>
           <div class="grid two">
             <label>活躍客戶
-              <input id="activeClients" name="activeClients" type="number" min="0" />
+              <input id="activeClients" name="activeClients" type="text" readonly />
+            </label>
+            <label>Month to Date Sales
+              <input id="monthToDateSales" name="monthToDateSales" type="text" readonly />
+            </label>
+            <label>MTD %
+              <input id="mtdPercent" name="mtdPercent" type="text" readonly />
             </label>
             <label>過往6個月平均消費
               <input id="averageSpending" name="averageSpending" type="text" readonly />
@@ -197,6 +285,8 @@ const form = document.getElementById('coachingForm');
 const recordIdInput = document.getElementById('recordId');
 const searchInput = document.getElementById('searchInput');
 const centerFilter = document.getElementById('centerFilter');
+const therapistFilter = document.getElementById('therapistFilter');
+const mtdFilter = document.getElementById('mtdFilter');
 const groupedRecords = document.getElementById('groupedRecords');
 const centerSummary = document.getElementById('centerSummary');
 const sourceStatus = document.getElementById('sourceStatus');
@@ -206,12 +296,13 @@ const formPanel = document.getElementById('formPanel');
 const createSessionBtn = document.getElementById('createSessionBtn');
 const cancelEditBtn = document.getElementById('cancelEditBtn');
 
+const MAX_COACHING_CHANCES = 5;
 let sheetRecords = [];
 let allRecords = [];
 
 const fields = [
   'center','staffName','positionLevel','joinDate','coachingDate','coachingTime','directManager','directReport','brand',
-  'activeClients','averageSpending','averageSpending12','csatAverage','companySalesTarget','selfSalesTarget',
+  'activeClients','monthToDateSales','mtdPercent','averageSpending','averageSpending12','csatAverage','companySalesTarget','selfSalesTarget',
   'keyContent','changePlan','expectedGoal','method1','method2','method3',
   'nextMeeting','staffAnchor','cultureJourneyRating'
 ];
@@ -226,7 +317,9 @@ const headerAliases = {
   directManager: ['直屬上司', '上司', 'Direct manager', 'Direct company'],
   directReport: ['直線下屬', '下屬', 'Direct report'],
   brand: ['品牌', 'Brand'],
-  activeClients: ['活躍客戶', 'Active clients'],
+  activeClients: ['活躍客戶', 'ACB Number', 'acb number', 'Active clients'],
+  monthToDateSales: ['Month to Date Sales', 'MTD Sales', 'month to date sales'],
+  mtdPercent: ['MTD %', 'mtd %', 'MTD Percent', 'MTD Percentage'],
   averageSpending: ['過往6個月平均消費', '平均消費', 'Average spending 6 months', '6 month average spending'],
   averageSpending12: ['過往12個月平均消費', 'Average spending 12 months', '12 month average spending'],
   csatAverage: ['顧客滿意度平均', 'CSAT', 'csat'],
@@ -312,6 +405,9 @@ function normalizeApiRecord(row, index) {
   record.staffName = String(row.staffName ?? row.therapist ?? row['治療師'] ?? row['同事名'] ?? row['Therapist'] ?? '').trim();
   record.positionLevel = String(row.positionLevel ?? row.position ?? row['職級'] ?? row['Position'] ?? '').trim();
   record.companySalesTarget = String(row.companySalesTarget ?? row.salesTargetCompany ?? row['每月銷售目標（公司定）'] ?? row['公司銷售目標'] ?? '').trim();
+  record.activeClients = String(row.activeClients ?? row.acbNumber ?? row['活躍客戶'] ?? row['ACB Number'] ?? '').trim();
+  record.monthToDateSales = String(row.monthToDateSales ?? row.mtdSales ?? row['Month to Date Sales'] ?? row['MTD Sales'] ?? '').trim();
+  record.mtdPercent = String(row.mtdPercent ?? row['MTD %'] ?? row['mtd %'] ?? '').trim();
   record.joinDate = String(row.joinDate ?? row['入職日期'] ?? '').trim();
   record.averageSpending = String(row.averageSpending ?? row.avg6 ?? row['過往6個月平均消費'] ?? row['6個月平均消費'] ?? '').trim();
   record.averageSpending12 = String(row.averageSpending12 ?? row.avg12 ?? row['過往12個月平均消費'] ?? row['12個月平均消費'] ?? '').trim();
@@ -329,7 +425,7 @@ function rowsToRecords(rows) {
   const headers = rows[0];
   const columnMap = {};
   Object.entries(headerAliases).forEach(([field, aliases]) => {
-    columnMap[field] = findColumn(headers, aliases, field === 'center' ? 0 : field === 'staffName' ? 1 : field === 'positionLevel' ? 3 : field === 'companySalesTarget' ? 4 : field === 'joinDate' ? 5 : field === 'averageSpending' ? 6 : field === 'averageSpending12' ? 7 : -1);
+    columnMap[field] = findColumn(headers, aliases, field === 'center' ? 0 : field === 'staffName' ? 1 : field === 'positionLevel' ? 3 : field === 'companySalesTarget' ? 4 : field === 'joinDate' ? 5 : field === 'averageSpending' ? 6 : field === 'averageSpending12' ? 7 : field === 'activeClients' ? 8 : field === 'monthToDateSales' ? 10 : field === 'mtdPercent' ? 12 : -1);
   });
 
   return rows.slice(1).map((row, index) => {
@@ -384,7 +480,53 @@ async function loadSheetRecords() {
 function refreshData() {
   allRecords = [...sheetRecords, ...getLocalRecords().map(record => ({ ...record, source: '本機' }))].filter(record => !isExcludedCenter(record.center));
   updateCenterFilter();
+  updateTherapistFilter();
   renderDashboard();
+}
+
+function parsePercent(value) {
+  const raw = String(value || '').replace('%', '').trim();
+  const number = Number(raw);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function getMtdStatus(value) {
+  const percent = parsePercent(value);
+  if (percent >= 100) return 'green';
+  if (percent >= 90) return 'yellow';
+  return 'red';
+}
+
+function getMtdStatusLabel(value) {
+  const status = getMtdStatus(value);
+  if (status === 'green') return '綠燈';
+  if (status === 'yellow') return '黃燈';
+  return '紅燈';
+}
+
+function renderChanceMarks(count) {
+  const remaining = Math.max(0, MAX_COACHING_CHANCES - count);
+  const marks = Array.from({ length: MAX_COACHING_CHANCES }, (_, index) => {
+    const used = index < count;
+    return `<span class="chance-mark ${used ? 'used' : 'remaining'}">${used ? '✓' : remaining}</span>`;
+  }).join('');
+  return `<div class="chance-wrap"><span>剩餘 ${remaining}/${MAX_COACHING_CHANCES} 次</span><div class="chance-marks">${marks}</div></div>`;
+}
+
+function updateTherapistFilter() {
+  const current = therapistFilter?.value || '';
+  if (!therapistFilter) return;
+
+  const selectedCenter = centerFilter.value;
+  const therapists = [...new Set(getTherapistSourceRecords()
+    .filter(record => !selectedCenter || record.center === selectedCenter)
+    .map(record => record.staffName || '未填治療師')
+  )].sort();
+
+  therapistFilter.innerHTML = '<option value="">全部治療師</option>' +
+    therapists.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+
+  therapistFilter.value = therapists.includes(current) ? current : '';
 }
 
 function updateCenterFilter() {
@@ -397,10 +539,21 @@ function updateCenterFilter() {
 function getFilteredRecords() {
   const query = searchInput.value.toLowerCase().trim();
   const selectedCenter = centerFilter.value;
+  const selectedTherapist = therapistFilter?.value || '';
+  const selectedMtd = mtdFilter?.value || '';
+
   return allRecords.filter(record => {
-    const matchesCenter = !selectedCenter || (record.center || '未分類') === selectedCenter;
-    const matchesQuery = !query || Object.values(record).join(' ').toLowerCase().includes(query);
-    return matchesCenter && matchesQuery;
+    const matchesCenter = !selectedCenter || (record.center || '未分類樓層') === selectedCenter;
+    const matchesTherapist = !selectedTherapist || (record.staffName || '未填治療師') === selectedTherapist;
+    const therapistInfo = getTherapistSourceRecords().find(info =>
+      info.center === (record.center || '') &&
+      info.staffName === (record.staffName || '')
+    ) || record;
+    const mtdStatus = getMtdStatus(therapistInfo.mtdPercent || record.mtdPercent || '');
+    const matchesMtd = !selectedMtd || mtdStatus === selectedMtd;
+    const matchesQuery = !query || Object.values(record).join(' ').toLowerCase().includes(query) ||
+      Object.values(therapistInfo).join(' ').toLowerCase().includes(query);
+    return matchesCenter && matchesTherapist && matchesMtd && matchesQuery;
   });
 }
 
@@ -436,6 +589,8 @@ function renderSummary(grouped) {
 
 function renderGroups(grouped) {
   const selectedCenter = centerFilter.value;
+  const selectedTherapist = therapistFilter?.value || '';
+  const selectedMtd = mtdFilter?.value || '';
   const query = searchInput.value.toLowerCase().trim();
 
   const allTherapistsByFloor = getTherapistSourceRecords().reduce((acc, record) => {
@@ -457,8 +612,16 @@ function renderGroups(grouped) {
 
   groupedRecords.innerHTML = floors.map(floor => {
     const therapists = Object.keys(allTherapistsByFloor[floor]).sort((a, b) => a.localeCompare(b));
+
     const therapistCards = therapists.map(therapist => {
       const therapistInfo = allTherapistsByFloor[floor][therapist];
+      const mtdPercent = therapistInfo.mtdPercent || '';
+      const mtdSales = therapistInfo.monthToDateSales || '';
+      const mtdStatus = getMtdStatus(mtdPercent);
+
+      if (selectedTherapist && therapist !== selectedTherapist) return '';
+      if (selectedMtd && mtdStatus !== selectedMtd) return '';
+
       const therapistRecords = (grouped[floor] || []).filter(record =>
         (record.staffName || '未填治療師') === therapist &&
         record.source !== '資料表'
@@ -475,11 +638,26 @@ function renderGroups(grouped) {
 
       if (!showTherapist) return '';
 
+      const coachingCount = therapistRecords.length || 0;
+      const canCreate = coachingCount < MAX_COACHING_CHANCES;
+
       return `
-        <article class="therapist-card">
+        <article class="therapist-card ${mtdStatus}-light">
           <div class="therapist-header">
-            <h4>治療師：${escapeHtml(therapist)}</h4>
-            <span class="badge">${therapistRecords.length || 0} 次輔導</span>
+            <div>
+              <h4>治療師：${escapeHtml(therapist)}
+                <span class="mtd-label ${mtdStatus}">
+                  ${escapeHtml(getMtdStatusLabel(mtdPercent))} · MTD ${escapeHtml(mtdPercent || '-')} · Sales ${escapeHtml(mtdSales || '-')}
+                </span>
+              </h4>
+              ${renderChanceMarks(coachingCount)}
+            </div>
+            <div class="therapist-actions">
+              <span class="badge">${coachingCount} 次輔導</span>
+              <button class="primary" type="button" ${canCreate ? '' : 'disabled'} onclick="createCoachingForTherapist('${escapeAttr(floor)}','${escapeAttr(therapist)}')">
+                Create New Coaching Session
+              </button>
+            </div>
           </div>
 
           <div class="session-list">
@@ -527,7 +705,7 @@ function renderGroups(grouped) {
         </div>
 
         <div class="therapist-list">
-          ${therapistCards || '<p class="hint">沒有符合搜尋的治療師。</p>'}
+          ${therapistCards || '<p class="hint">沒有符合篩選的治療師。</p>'}
         </div>
       </section>
     `;
@@ -638,6 +816,9 @@ function autofillTherapistDetails() {
   const avg6Input = document.getElementById('averageSpending');
   const avg12Input = document.getElementById('averageSpending12');
   const positionInput = document.getElementById('positionLevel');
+  const activeClientsInput = document.getElementById('activeClients');
+  const monthToDateSalesInput = document.getElementById('monthToDateSales');
+  const mtdPercentInput = document.getElementById('mtdPercent');
 
   const match = getTherapistSourceRecords().find(record =>
     record.center === floor &&
@@ -651,6 +832,9 @@ function autofillTherapistDetails() {
   if (joinDateInput) joinDateInput.value = formatDateForInput(getRecordValue(match, ['joinDate', '入職日期']));
   if (avg6Input) avg6Input.value = getRecordValue(match, ['averageSpending', 'avg6', '過往6個月平均消費', '6個月平均消費']);
   if (avg12Input) avg12Input.value = getRecordValue(match, ['averageSpending12', 'avg12', '過往12個月平均消費', '12個月平均消費']);
+  if (activeClientsInput) activeClientsInput.value = getRecordValue(match, ['activeClients', 'acbNumber', 'ACB Number', '活躍客戶']);
+  if (monthToDateSalesInput) monthToDateSalesInput.value = getRecordValue(match, ['monthToDateSales', 'mtdSales', 'Month to Date Sales', 'MTD Sales']);
+  if (mtdPercentInput) mtdPercentInput.value = getRecordValue(match, ['mtdPercent', 'MTD %', 'mtd %', 'MTD Percent']);
 }
 
 function autofillPosition() {
@@ -688,6 +872,16 @@ function clearForm() {
   hideFormPanel();
 }
 
+function createCoachingForTherapist(floor, therapist) {
+  clearForm();
+  populateFormDropdowns(floor, therapist);
+  document.getElementById('center').value = floor;
+  updateTherapistOptions(therapist);
+  document.getElementById('staffName').value = therapist;
+  autofillTherapistDetails();
+  showFormPanel();
+}
+
 function editRecord(id) {
   const record = getLocalRecords().find(item => item.id === id);
   if (record) fillForm(record);
@@ -709,7 +903,7 @@ function exportFile(type) {
     content = JSON.stringify(records, null, 2);
     mime = 'application/json;charset=utf-8;';
   } else {
-    const headers = ['樓層','治療師','職級','入職日期','輔導日期','輔導時間','直屬上司','直線下屬','品牌','活躍客戶','過往6個月平均消費','過往12個月平均消費','顧客滿意度平均','每月銷售目標（公司定）','每月銷售目標（自己定）','重點內容','轉變計劃','期望目標','方法一','方法二','方法三','下次見面時間','同事 Anchor','我的評分','來源'];
+    const headers = ['樓層','治療師','職級','入職日期','輔導日期','輔導時間','直屬上司','直線下屬','品牌','活躍客戶','Month to Date Sales','MTD %','過往6個月平均消費','過往12個月平均消費','顧客滿意度平均','每月銷售目標（公司定）','每月銷售目標（自己定）','重點內容','轉變計劃','期望目標','方法一','方法二','方法三','下次見面時間','同事 Anchor','我的評分','來源'];
     const keys = [...fields, 'source'];
     content = [headers, ...records.map(record => keys.map(key => record[key] || ''))]
       .map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(','))
@@ -729,6 +923,12 @@ function exportFile(type) {
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[char]));
+}
+
+function escapeAttr(value) {
+  return String(value ?? '').replace(/[\\'"]/g, char => ({
+    "\\": "\\\\", "'": "\\'", '"': '&quot;'
   }[char]));
 }
 
@@ -755,7 +955,9 @@ document.getElementById('printBtn').addEventListener('click', () => window.print
 document.getElementById('exportCsvBtn').addEventListener('click', () => exportFile('csv'));
 document.getElementById('exportJsonBtn').addEventListener('click', () => exportFile('json'));
 searchInput.addEventListener('input', renderDashboard);
-centerFilter.addEventListener('change', renderDashboard);
+centerFilter.addEventListener('change', () => { updateTherapistFilter(); renderDashboard(); });
+therapistFilter.addEventListener('change', renderDashboard);
+mtdFilter.addEventListener('change', renderDashboard);
 sheetUrlInput.addEventListener('change', loadSheetRecords);
 document.getElementById('center').addEventListener('change', () => updateTherapistOptions(''));
 document.getElementById('staffName').addEventListener('change', autofillTherapistDetails);
